@@ -1,6 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCScheduler.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/FMODAudioEngine.hpp> 
 #include <random>
 
 using namespace geode::prelude;
@@ -11,7 +12,6 @@ public:
         static SpeedChaosManager instance;
         return instance;
     }
-
     float currentSpeed = 1.0f;
     float targetSpeed = 1.0f;
     float timeUntilChange = 3.0f;
@@ -62,12 +62,19 @@ private:
 class $modify(FleroScheduler, CCScheduler) {
     void update(float dt) {
         CCScheduler::update(dt);
-
         auto& manager = SpeedChaosManager::get();
-        
+
         if (!Mod::get()->getSettingValue<bool>("enabled")) {
             if (manager.currentSpeed != 1.0f) {
                 manager.reset();
+                if (Mod::get()->getSettingValue<bool>("sync-music")) {
+                    if (auto* audioEngine = FMODAudioEngine::get()) {
+                        FMOD::ChannelGroup* masterGroup;
+                        if (audioEngine->m_system->getMasterChannelGroup(&masterGroup) == FMOD_OK) {
+                            masterGroup->setPitch(1.0f);
+                        }
+                    }
+                }
             }
             return;
         }
@@ -83,7 +90,6 @@ class $modify(FleroScheduler, CCScheduler) {
         if (smoothTransition && manager.transitionProgress < 1.0f) {
             float transitionDuration = Mod::get()->getSettingValue<double>("transition-duration");
             manager.transitionProgress += dt / transitionDuration;
-            
             if (manager.transitionProgress >= 1.0f) {
                 manager.transitionProgress = 1.0f;
                 manager.currentSpeed = manager.targetSpeed;
@@ -92,18 +98,15 @@ class $modify(FleroScheduler, CCScheduler) {
                 t = t < 0.5f ? 4.0f * t * t * t : 1.0f - std::pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
                 manager.currentSpeed = manager.currentSpeed + (manager.targetSpeed - manager.currentSpeed) * t;
             }
-            
             CCDirector::get()->getScheduler()->setTimeScale(manager.currentSpeed);
         }
 
         manager.elapsed += dt;
-        
         if (manager.elapsed >= manager.timeUntilChange) {
             manager.elapsed = 0.0f;
-            
             float newSpeed = manager.getRandomSpeed();
             manager.timeUntilChange = manager.getRandomInterval();
-            
+
             if (smoothTransition) {
                 manager.targetSpeed = newSpeed;
                 manager.transitionProgress = 0.0f;
@@ -112,7 +115,7 @@ class $modify(FleroScheduler, CCScheduler) {
                 manager.targetSpeed = newSpeed;
                 CCDirector::get()->getScheduler()->setTimeScale(newSpeed);
             }
-            
+
             if (Mod::get()->getSettingValue<bool>("show-notifications")) {
                 Notification::create(
                     manager.getSpeedMessage(newSpeed),
@@ -129,11 +132,9 @@ class $modify(FleroPlayLayer, PlayLayer) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) {
             return false;
         }
-
         auto& manager = SpeedChaosManager::get();
         manager.isInLevel = true;
         manager.timeUntilChange = manager.getRandomInterval();
-        
         return true;
     }
 
@@ -141,14 +142,12 @@ class $modify(FleroPlayLayer, PlayLayer) {
         auto& manager = SpeedChaosManager::get();
         manager.isInLevel = false;
         manager.reset();
-        
         PlayLayer::onQuit();
     }
 
     void levelComplete() {
         auto& manager = SpeedChaosManager::get();
         manager.reset();
-        
         PlayLayer::levelComplete();
     }
 
@@ -156,5 +155,22 @@ class $modify(FleroPlayLayer, PlayLayer) {
         PlayLayer::resetLevel();
         auto& manager = SpeedChaosManager::get();
         manager.reset();
+    }
+};
+
+class $modify(FleroFMODAudioEngine, FMODAudioEngine) {
+    void update(float dt) {
+        FMODAudioEngine::update(dt);
+
+        if (!Mod::get()->getSettingValue<bool>("enabled") || !Mod::get()->getSettingValue<bool>("sync-music")) {
+            return;
+        }
+
+        float currentSpeed = SpeedChaosManager::get().currentSpeed;
+
+        FMOD::ChannelGroup* masterGroup;
+        if (m_system->getMasterChannelGroup(&masterGroup) == FMOD_OK) {
+            masterGroup->setPitch(currentSpeed);
+        }
     }
 };
