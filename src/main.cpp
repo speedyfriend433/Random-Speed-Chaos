@@ -64,3 +64,4 @@ false;_0xffff._0x999();PlayLayer::onQuit();}void levelComplete(){auto&_0x11111=
 _0xk1l2m3n4::get();_0x11111._0x999();PlayLayer::levelComplete();}void resetLevel
 (){PlayLayer::resetLevel();auto&_0x22222=_0xk1l2m3n4::get();_0x22222._0x999();}
 };
+// sss....sssix seven?!??!
